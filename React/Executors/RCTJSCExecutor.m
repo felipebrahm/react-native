@@ -388,11 +388,6 @@ static void RCTInstallJSCProfiler(RCTBridge *bridge, JSContextRef context)
 
   _valid = NO;
 
-  if (_jsModules) {
-    CFRelease(_jsModules);
-    fclose(_bundle);
-  }
-
 #if RCT_DEV
   [[NSNotificationCenter defaultCenter] removeObserver:self];
 #endif
@@ -407,6 +402,11 @@ static void RCTInstallJSCProfiler(RCTBridge *bridge, JSContextRef context)
                  withObject:nil
               waitUntilDone:NO];
   _context = nil;
+
+  if (_jsModules) {
+    CFRelease(_jsModules);
+    fclose(_bundle);
+  }
 }
 
 - (void)flushedQueue:(RCTJavaScriptCallback)onComplete

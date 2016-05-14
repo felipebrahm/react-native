@@ -73,7 +73,7 @@ RCT_EXPORT_MODULE()
   _injectedObjects = [NSMutableDictionary new];
   [_socket setDelegateDispatchQueue:_jsQueue];
 
-  NSURL *startDevToolsURL = [NSURL URLWithString:@"/launch-chrome-devtools" relativeToURL:_url];
+  NSURL *startDevToolsURL = [NSURL URLWithString:@"/launch-js-devtools" relativeToURL:_url];
   [NSURLConnection connectionWithRequest:[NSURLRequest requestWithURL:startDevToolsURL] delegate:nil];
 
   if (![self connectToProxy]) {
@@ -93,7 +93,7 @@ RCT_EXPORT_MODULE()
   if (!runtimeIsReady) {
     RCTLogError(@"Runtime is not ready for debugging.\n "
                  "- Make sure Packager server is running.\n"
-                 "- Make sure Chrome is running and not paused on a breakpoint or exception and try reloading again.");
+                 "- Make sure the JavaScript Debugger is running and not paused on a breakpoint or exception and try reloading again.");
     [self invalidate];
     return;
   }

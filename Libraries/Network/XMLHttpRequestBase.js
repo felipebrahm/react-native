@@ -61,6 +61,8 @@ class XMLHttpRequestBase {
   status: number;
   timeout: number;
   responseURL: ?string;
+  ontimeout: ?Function;
+  onerror: ?Function;
 
   upload: ?{
     onprogress?: (event: Object) => void;
@@ -79,6 +81,7 @@ class XMLHttpRequestBase {
   _responseType: ResponseType;
   _sent: boolean;
   _url: ?string;
+  _timedOut: boolean;
 
   constructor() {
     this.UNSENT = UNSENT;
@@ -91,11 +94,15 @@ class XMLHttpRequestBase {
     this.onload = null;
     this.upload = undefined; /* Upload not supported yet */
     this.timeout = 0;
+    this.ontimeout = null;
+    this.onerror = null;
 
     this._reset();
     this._method = null;
     this._url = null;
     this._aborted = false;
+    this._timedOut = false;
+    this._hasError = false;
   }
 
   _reset(): void {
@@ -115,6 +122,83 @@ class XMLHttpRequestBase {
     this._lowerCaseResponseHeaders = {};
 
     this._clearSubscriptions();
+    this._timedOut = false;
+  }
+
+  // $FlowIssue #10784535
+  get responseType(): ResponseType {
+    return this._responseType;
+  }
+
+  // $FlowIssue #10784535
+  set responseType(responseType: ResponseType): void {
+    if (this.readyState > HEADERS_RECEIVED) {
+      throw new Error(
+        "Failed to set the 'responseType' property on 'XMLHttpRequest': The " +
+        "response type cannot be set if the object's state is LOADING or DONE"
+      );
+    }
+    if (!SUPPORTED_RESPONSE_TYPES.hasOwnProperty(responseType)) {
+      warning(
+        `The provided value '${responseType}' is not a valid 'responseType'.`);
+      return;
+    }
+
+    // redboxes early, e.g. for 'arraybuffer' on ios 7
+    invariant(
+      SUPPORTED_RESPONSE_TYPES[responseType] || responseType === 'document',
+      `The provided value '${responseType}' is unsupported in this environment.`
+    );
+    this._responseType = responseType;
+  }
+
+  // $FlowIssue #10784535
+  get response(): Response {
+    const {responseType} = this;
+    if (responseType === '' || responseType === 'text') {
+      return this.readyState < LOADING || this._hasError
+        ? ''
+        : this.responseText;
+    }
+
+    if (this.readyState !== DONE) {
+      return null;
+    }
+
+    if (this._cachedResponse !== undefined) {
+      return this._cachedResponse;
+    }
+
+    switch (this.responseType) {
+      case 'document':
+        this._cachedResponse = null;
+        break;
+
+      case 'arraybuffer':
+        this._cachedResponse = toArrayBuffer(
+          this.responseText, this.getResponseHeader('content-type') || '');
+        break;
+
+      case 'blob':
+        this._cachedResponse = new global.Blob(
+          [this.responseText],
+          {type: this.getResponseHeader('content-type') || ''}
+        );
+        break;
+
+      case 'json':
+        try {
+          this._cachedResponse = JSON.parse(this.responseText);
+        } catch (_) {
+          this._cachedResponse = null;
+        }
+        break;
+
+      default:
+        this._cachedResponse = null;
+    }
+
+    return this._cachedResponse;
   }
 
   // $FlowIssue #10784535
@@ -249,11 +333,14 @@ class XMLHttpRequestBase {
     }
   }
 
-  _didCompleteResponse(requestId: number, error: string): void {
+  _didCompleteResponse(requestId: number, error: string, timeOutError: boolean): void {
     if (requestId === this._requestId) {
       if (error) {
         this.responseText = error;
         this._hasError = true;
+        if (timeOutError) {
+          this._timedOut = true;
+        }
       }
       this._clearSubscriptions();
       this._requestId = null;
@@ -304,7 +391,7 @@ class XMLHttpRequestBase {
       throw new Error('Cannot load an empty url');
     }
     this._reset();
-    this._method = method;
+    this._method = method.toUpperCase();
     this._url = url;
     this._aborted = false;
     this.setReadyState(this.OPENED);
@@ -362,17 +449,25 @@ class XMLHttpRequestBase {
       onreadystatechange.call(this, null);
     }
     if (newState === this.DONE && !this._aborted) {
-      this._sendLoad();
+      if (this._hasError) {
+        if (this._timedOut) {
+          this._sendEvent(this.ontimeout);
+        } else {
+          this._sendEvent(this.onerror);
+        }
+      }
+      else {
+        this._sendEvent(this.onload);
+      }
     }
   }
 
-  _sendLoad(): void {
+  _sendEvent(newEvent: ?Function): void {
     // TODO: workaround flow bug with nullable function checks
-    var onload = this.onload;
-    if (onload) {
+    if (newEvent) {
       // We should send an event to handler, but since we don't process that
       // event anywhere, let's leave it empty
-      onload(null);
+      newEvent(null);
     }
   }
 }
